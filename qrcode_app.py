@@ -27,23 +27,24 @@ def gerar_qrCodes_zip(numeros_serie):
     zip_buffer.seek(0)
     return zip_buffer
 
-# Interface Streamlit
-st.title("Gerador de QR Codes em Memória")
+def app():
+    st.title("Gerador de QR Codes em Memória")
 
-entrada = st.text_area("Insira os números de série (um por linha):")
+    entrada = st.text_area("Insira os números de série (um por linha):")
 
-if st.button("Gerar QR Codes"):
-    numeros = [n.strip() for n in entrada.splitlines() if n.strip()]
-    
-    if numeros:
-        zip_buffer = gerar_qrCodes_zip(numeros)
+    if st.button("Gerar QR Codes"):
+        numeros = [n.strip() for n in entrada.splitlines() if n.strip()]
+        
+        if numeros:
+            zip_buffer = gerar_qrCodes_zip(numeros)
 
-        st.success(f"{len(numeros)} QR Codes gerados com sucesso!")
-        st.download_button(
-            label="Baixar QR Codes em ZIP",
-            data=zip_buffer,
-            file_name="qrcodes.zip",
-            mime="application/zip"
-        )
-    else:
-        st.warning("Insira pelo menos um número de série.")
+            st.success(f"{len(numeros)} QR Codes gerados com sucesso!")
+            st.download_button(
+                label="Baixar QR Codes em ZIP",
+                data=zip_buffer,
+                file_name="qrcodes.zip",
+                mime="application/zip"
+            )
+            st.info("Após clicar, aguarde a janela de download abrir.")
+        else:
+            st.warning("Insira pelo menos um número de série.")

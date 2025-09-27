@@ -2,7 +2,6 @@ import streamlit as st
 import qrcode
 import zipfile
 import os
-import json
 import socket
 import subprocess
 from io import BytesIO
@@ -19,15 +18,18 @@ def get_local_ip():
     return ip
 
 
-# Função para gerar o JSON (txt) local
-def salvar_json(local, numeros_serie):
-    json_path = os.path.abspath(f"{local}.txt")  # Caminho absoluto
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(numeros_serie, f, ensure_ascii=False, indent=4)
-    return json_path
+def gerar_txt(local, numeros_serie):
+    txt_path = os.path.abspath(f"qrcode_files/{local}.txt")
+    pasta = os.path.dirname(txt_path)  # pega só o diretório do caminho
+    if pasta:
+        os.makedirs(pasta, exist_ok=True)
+
+    with open(txt_path, "w", encoding="utf-8") as f:
+        for numero in numeros_serie:
+            f.write(f"{numero}\n")
+    return txt_path
 
 
-# Função para gerar QR Codes apontando para o arquivo via HTTP
 def gerar_qrCodes_zip(local, ip, port):
     zip_buffer = BytesIO()
     json_url = f"http://{ip}:{port}/{local}.txt"
@@ -47,28 +49,34 @@ def gerar_qrCodes_zip(local, ip, port):
         img.save(img_bytes, format="PNG")
         img_bytes.seek(0)
 
-        zipf.writestr(f"{local}.png", img_bytes.read())
+        nome_arquivo = f"{os.path.basename(local)}.png"
+        zipf.writestr(nome_arquivo, img_bytes.read())
 
     zip_buffer.seek(0)
     return zip_buffer, json_url
 
 
-# Sobe o servidor HTTP na pasta atual (se não estiver rodando)
 def start_http_server(port):
+    pasta_arquivos = os.path.abspath("qrcode_files")
+    os.makedirs(pasta_arquivos, exist_ok=True)
+
     try:
         subprocess.Popen(
             ["python", "-m", "http.server", str(port), "--bind", "0.0.0.0"],
-            cwd=os.getcwd(),
+            cwd=pasta_arquivos,
         )
     except Exception as e:
         st.error(f"Erro ao iniciar servidor HTTP: {e}")
 
 
 def app():
-    st.title("Gerador de QR Codes apontando para TXT via HTTP")
+    with open("assets/header.html", "r", encoding="utf-8") as f:
+        st.markdown(f.read(), unsafe_allow_html=True)
 
-    local = st.text_area("Local:")
-    entrada = st.text_area("Insira os números de série (um por linha):")
+    local = st.text_input("Local do Estoque:", placeholder="Ex.: PRIME/Disponível")
+    entrada = st.text_area(
+        "Insira os números de série:", placeholder="Digite um número de série por linha"
+    )
 
     if st.button("Gerar QR Code"):
         numeros = [n.strip() for n in entrada.splitlines() if n.strip()]
@@ -78,7 +86,7 @@ def app():
             port = 8502
 
             # Salva o TXT
-            json_path = salvar_json(local, numeros)
+            json_path = gerar_txt(local, numeros)
 
             # Inicia o servidor HTTP
             start_http_server(port)
@@ -97,3 +105,13 @@ def app():
             )
         else:
             st.warning("Insira pelo menos um número de série.")
+
+    # HTML Rodapé
+    with open("assets/style.css") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+    with open("assets/footer.html", encoding="utf-8") as f:
+        st.markdown(
+            f.read(),
+            unsafe_allow_html=True,
+        )

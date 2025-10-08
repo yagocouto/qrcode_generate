@@ -3,11 +3,11 @@ import qrcode
 import zipfile
 import os
 import socket
-import subprocess
 from io import BytesIO
+import urllib.parse
 
 
-# Descobre o IP local do Windows/Linux
+# Descobre o IP local Windows/Linux
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -19,11 +19,11 @@ def get_local_ip():
 
 
 def gerar_txt(local, numeros_serie):
-    txt_path = os.path.abspath(f"qrcode_files/{local}.txt")
-    pasta = os.path.dirname(txt_path)  # pega só o diretório do caminho
-    if pasta:
-        os.makedirs(pasta, exist_ok=True)
+    # Cria a pasta da subpasta caso não exista
+    pasta = os.path.join("qrcode_files", os.path.dirname(local))
+    os.makedirs(pasta, exist_ok=True)
 
+    txt_path = os.path.abspath(f"qrcode_files/{local}.txt")
     with open(txt_path, "w", encoding="utf-8") as f:
         for numero in numeros_serie:
             f.write(f"{numero}\n")
@@ -32,7 +32,9 @@ def gerar_txt(local, numeros_serie):
 
 def gerar_qrCodes_zip(local, ip, port):
     zip_buffer = BytesIO()
-    json_url = f"http://{ip}:{port}/{local}.txt"
+    # Codifica todo o caminho relativo para o QR Code
+    encoded_file = urllib.parse.quote(local)
+    json_url = f"http://{ip}:{port}/?file={encoded_file}"
 
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
         qr = qrcode.QRCode(
@@ -56,24 +58,34 @@ def gerar_qrCodes_zip(local, ip, port):
     return zip_buffer, json_url
 
 
-def start_http_server(port):
-    pasta_arquivos = os.path.abspath("qrcode_files")
-    os.makedirs(pasta_arquivos, exist_ok=True)
-
-    try:
-        subprocess.Popen(
-            ["python", "-m", "http.server", str(port), "--bind", "0.0.0.0"],
-            cwd=pasta_arquivos,
-        )
-    except Exception as e:
-        st.error(f"Erro ao iniciar servidor HTTP: {e}")
-
-
 def app():
-    with open("assets/header.html", "r", encoding="utf-8") as f:
-        st.markdown(f.read(), unsafe_allow_html=True)
+    # Header
+    if os.path.exists("assets/header.html"):
+        with open("assets/header.html", "r", encoding="utf-8") as f:
+            st.markdown(f.read(), unsafe_allow_html=True)
 
-    local = st.text_input("Local do Estoque:", placeholder="Ex.: PRIME/Disponível")
+    # Lê query param para exibir arquivo TXT
+    query_params = st.query_params
+    if "file" in query_params:
+        file_name = urllib.parse.unquote(query_params["file"][0])
+        file_path = os.path.abspath(os.path.join("qrcode_files", file_name + ".txt"))
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                conteudo = f.read()
+            st.subheader(f"Conteúdo do arquivo: {file_name}.txt")
+            st.text_area("TXT", conteudo, height=300)
+            st.download_button(
+                label="Baixar arquivo TXT",
+                data=conteudo,
+                file_name=f"{file_name}.txt",
+                mime="text/plain",
+            )
+        else:
+            st.error(f"Arquivo não encontrado: {file_path}")
+        return
+
+    # Entrada de dados
+    local = st.text_input("Local do Estoque:", placeholder="Ex.: Prime/Disponivel2")
     entrada = st.text_area(
         "Insira os números de série:", placeholder="Digite um número de série por linha"
     )
@@ -83,20 +95,16 @@ def app():
 
         if numeros:
             ip = get_local_ip()
-            port = 8502
+            port = 8501
 
-            # Salva o TXT
-            json_path = gerar_txt(local, numeros)
+            # Salva o TXT na pasta correta
+            gerar_txt(local, numeros)
 
-            # Inicia o servidor HTTP
-            start_http_server(port)
-
-            # Gera o QR Code com o link HTTP
+            # Gera o QR Code com link para a própria aplicação
             zip_buffer, url = gerar_qrCodes_zip(local, ip, port)
 
             st.success("QR Code gerado com sucesso!")
-            st.write(f"O arquivo pode ser acessado em: **{url}**")
-
+            st.write(f"O QR Code aponta para: **{url}**")
             st.download_button(
                 label="Baixar QR Code",
                 data=zip_buffer,
@@ -106,12 +114,10 @@ def app():
         else:
             st.warning("Insira pelo menos um número de série.")
 
-    # HTML Rodapé
-    with open("assets/style.css") as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-
-    with open("assets/footer.html", encoding="utf-8") as f:
-        st.markdown(
-            f.read(),
-            unsafe_allow_html=True,
-        )
+    # Footer
+    if os.path.exists("assets/style.css"):
+        with open("assets/style.css") as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    if os.path.exists("assets/footer.html"):
+        with open("assets/footer.html", encoding="utf-8") as f:
+            st.markdown(f.read(), unsafe_allow_html=True)

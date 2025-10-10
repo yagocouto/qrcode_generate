@@ -4,6 +4,8 @@ import zipfile
 import os
 from io import BytesIO
 import socket
+import urllib.parse
+from openpyxl import Workbook, load_workbook
 
 
 # Descobre o IP local
@@ -17,22 +19,26 @@ def get_local_ip():
     return ip
 
 
-# Gera o arquivo TXT
-def gerar_txt(local, numeros_serie):
-    txt_path = os.path.abspath(f"qrcode_files/{local}.txt")
-    pasta = os.path.dirname(txt_path)
+def gerar_xlsx(local, numeros_serie):
+    xlsx_path = os.path.abspath(f"qrcode_files/{local}.xlsx")
+    pasta = os.path.dirname(xlsx_path)
     os.makedirs(pasta, exist_ok=True)
 
-    with open(txt_path, "w", encoding="utf-8") as f:
-        for numero in numeros_serie:
-            f.write(f"{numero}\n")
-    return txt_path
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Números de Série"
+
+    for i, numero in enumerate(numeros_serie, start=1):
+        ws.cell(row=i, column=1, value=numero)
+
+    wb.save(xlsx_path)
+    return xlsx_path
 
 
-# Gera o QR apontando para o próprio app Streamlit
 def gerar_qrCodes_zip(local, base_url):
     zip_buffer = BytesIO()
-    internal_url = f"{base_url}/?file={local}"
+    encoded_local = urllib.parse.quote(local)
+    internal_url = f"{base_url}/?file={encoded_local}"
 
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
         qr = qrcode.QRCode(
@@ -59,36 +65,48 @@ def app():
     with open("assets/header.html", "r", encoding="utf-8") as f:
         st.markdown(f.read(), unsafe_allow_html=True)
 
-    # Compatibilidade total (nova ou antiga API)
     try:
         query_params = st.query_params
     except AttributeError:
         query_params = st.experimental_get_query_params()
 
-    # Exibe conteúdo do arquivo se acessar com ?file=
     if "file" in query_params:
         local_name = (
             query_params["file"]
             if isinstance(query_params["file"], str)
             else query_params["file"][0]
         )
-        file_path = os.path.abspath(f"qrcode_files/{local_name}.txt")
+        local_name = urllib.parse.unquote(local_name)
+        file_path = os.path.abspath(f"qrcode_files/{local_name}.xlsx")
 
         if os.path.exists(file_path):
-            with open(file_path, "r", encoding="utf-8") as f:
-                conteudo = f.read()
+            wb = load_workbook(file_path)
+            ws = wb.active
+            conteudo = "\n".join(
+                [
+                    str(cell)
+                    for row in ws.iter_rows(values_only=True)
+                    for cell in row
+                    if cell
+                ]
+            )
+
             st.subheader(f"Números de série - {local_name}")
             st.text(conteudo)
-            st.download_button(
-                "Baixar arquivo TXT",
-                data=conteudo,
-                file_name=f"{local_name}.txt",
-                mime="text/plain",
-            )
+
+            with open(file_path, "rb") as f:
+                st.download_button(
+                    "Baixar arquivo Excel",
+                    data=f,
+                    file_name=f"{local_name}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+
         else:
             st.error("Arquivo não encontrado.")
         return  # interrompe o fluxo principal
 
+    # Interface principal
     local = st.text_input("Local do Estoque:", placeholder="Ex.: PRIME/Disponível")
     entrada = st.text_area(
         "Insira os números de série:", placeholder="Digite um número de série por linha"
@@ -98,10 +116,10 @@ def app():
         numeros = [n.strip() for n in entrada.splitlines() if n.strip()]
 
         if numeros:
-            gerar_txt(local, numeros)
+            gerar_xlsx(local, numeros)
 
             ip = get_local_ip()
-            base_url = f"http://{ip}:8501"  # mesma porta do Streamlit
+            base_url = f"http://{ip}:8501"
 
             zip_buffer, url = gerar_qrCodes_zip(local, base_url)
 
@@ -117,11 +135,9 @@ def app():
         else:
             st.warning("Insira pelo menos um número de série.")
 
+    # Estilo e rodapé
     with open("assets/style.css") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
     with open("assets/footer.html", encoding="utf-8") as f:
-        st.markdown(
-            f.read(),
-            unsafe_allow_html=True,
-        )
+        st.markdown(f.read(), unsafe_allow_html=True)
